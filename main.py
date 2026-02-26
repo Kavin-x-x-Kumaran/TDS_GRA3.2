@@ -5,16 +5,20 @@ import os
 
 app = FastAPI()
 
-# Initialize OpenAI Client
-# Ensure OPENAI_API_KEY is set in your environment variables
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# 1. Initialize Client with AI Pipe details
+# Replace 'YOUR_AIPIPE_TOKEN' with your actual token or set it in your env
+AIPIPE_TOKEN ="eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjI0ZjIwMDM4MDZAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.Tc32nyG08aK34k6e2XgZF5Zl7b6Pk38FEhK9Icgmt0U"
 
-# 1. Define the Structured Output Schema
+client = OpenAI(
+    base_url="https://api.aipipe.org/v1", 
+    api_key=AIPIPE_TOKEN
+)
+
+# Define Structured Output Schema
 class SentimentResponse(BaseModel):
-    sentiment: str = Field(description="One of: 'positive', 'negative', 'neutral'")
-    rating: int = Field(description="Sentiment intensity from 1 to 5")
+    sentiment: str = Field(description="Must be 'positive', 'negative', or 'neutral'")
+    rating: int = Field(description="Integer from 1 to 5")
 
-# 2. Define the Request Schema
 class CommentRequest(BaseModel):
     comment: str
 
@@ -24,19 +28,17 @@ async def analyze_comment(request: CommentRequest):
         raise HTTPException(status_code=400, detail="Comment cannot be empty")
 
     try:
-        # Use OpenAI Structured Outputs
+        # Requesting gpt-4o-mini via AI Pipe
         completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini", # Note: gpt-4o-mini is the standard naming for the mini model
+            model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Analyze the sentiment of the provided comment. Categorize as positive, negative, or neutral and provide a rating from 1-5."},
+                {"role": "system", "content": "You are a sentiment analysis tool. Return JSON with 'sentiment' (positive, negative, neutral) and 'rating' (1-5)."},
                 {"role": "user", "content": request.comment},
             ],
             response_format=SentimentResponse,
         )
 
-        # Extract the parsed structured data
         return completion.choices[0].message.parsed
 
     except Exception as e:
-        # Handle API failures or parsing errors
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"API Pipe Error: {str(e)}")
