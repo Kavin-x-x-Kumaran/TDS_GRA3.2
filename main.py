@@ -4,24 +4,20 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from openai import OpenAI
 
-# Initialize FastAPI
 app = FastAPI()
 
-# Configure OpenAI client to use aipipe.org
-# Assuming aipipe uses the standard OpenAI-compatible /v1 endpoint
+# Make sure there are no trailing slashes in the base_url unless required
 client = OpenAI(
     api_key=os.environ.get("AIPIPE_API_KEY"),
-    base_url="https://api.aipipe.org/openai/v1"
+    base_url="https://api.aipipe.org/v1" 
 )
 
-# 1. Define Request Schema
 class CommentRequest(BaseModel):
     comment: str
 
-# 2. Define Strict Response Schema for OpenAI Structured Outputs
 class SentimentResponse(BaseModel):
     sentiment: Literal["positive", "negative", "neutral"]
-    rating: int = Field(ge=1, le=5, description="Sentiment intensity (5=highly positive, 1=highly negative)")
+    rating: int = Field(ge=1, le=5)
 
 @app.post("/comment", response_model=SentimentResponse)
 async def analyze_comment(request: CommentRequest):
@@ -29,20 +25,22 @@ async def analyze_comment(request: CommentRequest):
         raise HTTPException(status_code=400, detail="Comment cannot be empty")
         
     try:
-        # Use the beta.chat.completions.parse method for guaranteed structured output
-        response = client.beta.chat.completions.parse(
+        # We'll use the standard completions here just in case the proxy 
+        # doesn't fully support the .parse() beta method yet.
+        response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": "You are a precise sentiment analysis engine. Analyze the following comment and extract the overall sentiment and a 1-5 rating."},
+                {"role": "system", "content": "Return JSON: {\"sentiment\": \"positive\"|\"negative\"|\"neutral\", \"rating\": 1-5}"},
                 {"role": "user", "content": request.comment}
             ],
-            response_format=SentimentResponse,
+            response_format={ "type": "json_object" }
         )
         
-        # Extract the parsed Pydantic object
-        result = response.choices[0].message.parsed
-        return result
+        # Manually parse since some proxies strip metadata
+        import json
+        content = json.loads(response.choices[0].message.content)
+        return content
 
     except Exception as e:
-        # Handle API failures or parsing errors gracefully
-        raise HTTPException(status_code=500, detail=f"AI Processing Error: {str(e)}")
+        # This will now tell us if it's a 401 (Auth), 404 (URL), or Timeout
+        raise HTTPException(status_code=500, detail=f"Proxy Error: {type(e).__name__} - {str(e)}")
