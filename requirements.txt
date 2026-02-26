@@ -1,3 +1,4 @@
 fastapi
 pydantic
 openai
+uvicorn[standard]==0.34.0
