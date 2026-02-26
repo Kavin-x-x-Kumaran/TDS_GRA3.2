@@ -11,7 +11,7 @@ app = FastAPI()
 # Assuming aipipe uses the standard OpenAI-compatible /v1 endpoint
 client = OpenAI(
     api_key=os.environ.get("AIPIPE_API_KEY"),
-    base_url="https://api.aipipe.org/v1" 
+    base_url="https://api.aipipe.org/openai/v1"
 )
 
 # 1. Define Request Schema
