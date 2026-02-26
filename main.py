@@ -1,44 +1,48 @@
+import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from typing import Literal
 from openai import OpenAI
-import os
 
+# Initialize FastAPI
 app = FastAPI()
 
-# 1. Initialize Client with AI Pipe details
-# Replace 'YOUR_AIPIPE_TOKEN' with your actual token or set it in your env
-AIPIPE_TOKEN ="eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjI0ZjIwMDM4MDZAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.Tc32nyG08aK34k6e2XgZF5Zl7b6Pk38FEhK9Icgmt0U"
-
+# Configure OpenAI client to use aipipe.org
+# Assuming aipipe uses the standard OpenAI-compatible /v1 endpoint
 client = OpenAI(
-    base_url="https://api.aipipe.org/v1", 
-    api_key=AIPIPE_TOKEN
+    api_key=os.environ.get("AIPIPE_API_KEY"),
+    base_url="https://api.aipipe.org/v1" 
 )
 
-# Define Structured Output Schema
-class SentimentResponse(BaseModel):
-    sentiment: str = Field(description="Must be 'positive', 'negative', or 'neutral'")
-    rating: int = Field(description="Integer from 1 to 5")
-
+# 1. Define Request Schema
 class CommentRequest(BaseModel):
     comment: str
+
+# 2. Define Strict Response Schema for OpenAI Structured Outputs
+class SentimentResponse(BaseModel):
+    sentiment: Literal["positive", "negative", "neutral"]
+    rating: int = Field(ge=1, le=5, description="Sentiment intensity (5=highly positive, 1=highly negative)")
 
 @app.post("/comment", response_model=SentimentResponse)
 async def analyze_comment(request: CommentRequest):
     if not request.comment.strip():
         raise HTTPException(status_code=400, detail="Comment cannot be empty")
-
+        
     try:
-        # Requesting gpt-4o-mini via AI Pipe
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
+        # Use the beta.chat.completions.parse method for guaranteed structured output
+        response = client.beta.chat.completions.parse(
+            model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": "You are a sentiment analysis tool. Return JSON with 'sentiment' (positive, negative, neutral) and 'rating' (1-5)."},
-                {"role": "user", "content": request.comment},
+                {"role": "system", "content": "You are a precise sentiment analysis engine. Analyze the following comment and extract the overall sentiment and a 1-5 rating."},
+                {"role": "user", "content": request.comment}
             ],
             response_format=SentimentResponse,
         )
-
-        return completion.choices[0].message.parsed
+        
+        # Extract the parsed Pydantic object
+        result = response.choices[0].message.parsed
+        return result
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"API Pipe Error: {str(e)}")
+        # Handle API failures or parsing errors gracefully
+        raise HTTPException(status_code=500, detail=f"AI Processing Error: {str(e)}")
